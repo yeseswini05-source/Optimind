@@ -1,13 +1,16 @@
 const router = require("express").Router();
+
 const pool = require("../db");
+
+const auth = require("../middleware/authMiddleware");
 
 /* ================= GET ANALYTICS ================= */
 
-router.get("/", async (req, res) => {
+router.get("/", auth, async (req, res) => {
 
   try {
 
-    // Fetch entries
+    /* ================= FETCH USER ENTRIES ================= */
 
     const result = await pool.query(
       `
@@ -16,10 +19,13 @@ router.get("/", async (req, res) => {
       WHERE user_id = $1
       ORDER BY created_at ASC
       `,
-      [9]
+      [req.user.id]
     );
 
     const entries = result.rows;
+
+    console.log("ANALYTICS USER:", req.user.id);
+    console.log("ENTRIES FOUND:", entries.length);
 
     /* ================= EMPTY STATE ================= */
 
@@ -38,7 +44,7 @@ router.get("/", async (req, res) => {
 
     }
 
-    /* ================= ANALYTICS VARIABLES ================= */
+    /* ================= VARIABLES ================= */
 
     let totalSleep = 0;
     let totalStudy = 0;
@@ -46,7 +52,7 @@ router.get("/", async (req, res) => {
 
     const moodMap = {};
 
-    /* ================= PRODUCTIVITY ENGINE ================= */
+    /* ================= PROCESS ENTRIES ================= */
 
     const processedEntries = entries.map((entry) => {
 
@@ -56,41 +62,57 @@ router.get("/", async (req, res) => {
       const studyHours =
         Number(entry.study_hours) || 0;
 
-      // Optional fields with safe fallbacks
-      const stressLevel =
-        Number(entry.stress_level) || 3;
+      /* ===== TEXT-BASED LEVEL MAPPING ===== */
+
+      const focusMap = {
+        low: 3,
+        medium: 6,
+        high: 9
+      };
+
+      const stressMap = {
+        low: 2,
+        medium: 5,
+        high: 8
+      };
 
       const focusLevel =
-        Number(entry.focus_level) || 5;
+        focusMap[
+          String(entry.focus_level).toLowerCase()
+        ] || 5;
 
-      const sentiment =
-        entry.sentiment || "neutral";
+      const stressLevel =
+        stressMap[
+          String(entry.stress_level).toLowerCase()
+        ] || 5;
 
-      /* ===== PRODUCTIVITY FORMULA ===== */
+      const sentimentScore =
+        Number(entry.sentiment_score) || 0;
+
+      /* ================= PRODUCTIVITY FORMULA ================= */
 
       const sleepBonus =
-        sleepHours >= 7 ? 15 : 5;
+        sleepHours >= 7 ? 20 : 5;
+
+      const studyBonus =
+        studyHours * 10;
 
       const focusBonus =
-        focusLevel * 5;
+        focusLevel * 4;
 
       const stressPenalty =
-        stressLevel * 4;
+        stressLevel * 3;
 
       const sentimentBonus =
-        sentiment === "positive"
-          ? 10
-          : sentiment === "negative"
-          ? -5
-          : 0;
+        sentimentScore * 10;
 
       let productivityScore =
 
-        studyHours * 12 +
         sleepBonus +
-        focusBonus -
-        stressPenalty +
-        sentimentBonus;
+        studyBonus +
+        focusBonus +
+        sentimentBonus -
+        stressPenalty;
 
       /* ===== CLAMP SCORE ===== */
 
@@ -99,7 +121,7 @@ router.get("/", async (req, res) => {
         Math.min(100, productivityScore)
       );
 
-      /* ===== TOTALS ===== */
+      /* ================= TOTALS ================= */
 
       totalSleep += sleepHours;
 
@@ -107,7 +129,7 @@ router.get("/", async (req, res) => {
 
       totalProductivity += productivityScore;
 
-      /* ===== MOOD COUNT ===== */
+      /* ================= MOOD COUNTS ================= */
 
       if (entry.mood) {
 
@@ -190,8 +212,6 @@ router.get("/", async (req, res) => {
       const daysDifference =
         difference / (1000 * 60 * 60 * 24);
 
-      // Consecutive days
-
       if (daysDifference <= 1.5) {
 
         journalStreak++;
@@ -241,6 +261,7 @@ router.get("/", async (req, res) => {
 
   } catch (err) {
 
+    console.error("ANALYTICS ERROR:");
     console.error(err);
 
     res.status(500).json({

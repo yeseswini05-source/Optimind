@@ -1,22 +1,52 @@
 const router = require("express").Router();
+
 const pool = require("../db");
+
 const auth = require("../middleware/authMiddleware");
 
 const extractMetrics = require("../ai/extractMetrics");
-const calculateMetrics = require("../analytics/calculateMetrics");
+
+const calculateMetrics =
+  require("../analytics/calculateMetrics");
+
+/* ================= HELPER ================= */
+
+function convertLevel(level) {
+
+  if (level === "low") return 3;
+
+  if (level === "medium") return 6;
+
+  if (level === "high") return 9;
+
+  return 5;
+
+}
 
 /* ================= SAVE DIARY ENTRY ================= */
 
 router.post("/", auth, async (req, res) => {
+
   try {
 
     const { content } = req.body;
 
-    // NLP Extraction
+    /* NLP EXTRACTION */
+
     const metrics = extractMetrics(content);
 
-    // Analytics Calculation
-    const analytics = calculateMetrics(metrics);
+    /* CONVERT TEXT LEVELS TO NUMBERS */
+
+    const focusLevel =
+      convertLevel(metrics.focusLevel);
+
+    const stressLevel =
+      convertLevel(metrics.stressLevel);
+
+    /* ANALYTICS */
+
+    const analytics =
+      calculateMetrics(metrics);
 
     console.log("EXTRACTED METRICS:");
     console.log(metrics);
@@ -24,7 +54,8 @@ router.post("/", auth, async (req, res) => {
     console.log("ANALYTICS:");
     console.log(analytics);
 
-    // Save into PostgreSQL
+    /* SAVE TO DATABASE */
+
     await pool.query(
       `
       INSERT INTO diary_entries
@@ -48,8 +79,8 @@ router.post("/", auth, async (req, res) => {
         metrics.sleepHours,
         metrics.studyHours,
         metrics.mood,
-        metrics.focusLevel,
-        metrics.stressLevel,
+        focusLevel,
+        stressLevel,
         metrics.sentimentScore,
         analytics.productivityScore
       ]
@@ -71,7 +102,9 @@ router.post("/", auth, async (req, res) => {
       success: false,
       error: "Server error"
     });
+
   }
+
 });
 
 /* ================= GET USER ENTRIES ================= */
@@ -101,7 +134,9 @@ router.get("/", auth, async (req, res) => {
       success: false,
       error: "Server error"
     });
+
   }
+
 });
 
 module.exports = router;

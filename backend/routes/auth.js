@@ -1,95 +1,183 @@
 const router = require("express").Router();
+
 const bcrypt = require("bcrypt");
+
 const jwt = require("jsonwebtoken");
+
 const pool = require("../db");
 
 /* ================= REGISTER ================= */
+
 router.post("/register", async (req, res) => {
+
   try {
+
     const { email, password } = req.body;
 
-    // validation
+    /* VALIDATION */
+
     if (!email || !password) {
-      return res.status(400).json({ error: "Email and password required" });
+
+      return res.status(400).json({
+        error: "Email and password required"
+      });
+
     }
 
-    // check existing user
-    const existing = await pool.query(
-      "SELECT * FROM users WHERE email=$1",
+    /* CHECK EXISTING USER */
+
+    const existingUser = await pool.query(
+      `
+      SELECT *
+      FROM users
+      WHERE email = $1
+      `,
       [email]
     );
 
-    if (existing.rows.length > 0) {
-      return res.status(400).json({ error: "User already exists" });
+    if (existingUser.rows.length > 0) {
+
+      return res.status(400).json({
+        error: "User already exists"
+      });
+
     }
 
-    // hash password
-    const hashed = await bcrypt.hash(password, 10);
+    /* HASH PASSWORD */
 
-    // insert user
+    const hashedPassword =
+      await bcrypt.hash(password, 10);
+
+    /* INSERT USER */
+
     const newUser = await pool.query(
-      "INSERT INTO users (email, password) VALUES ($1, $2) RETURNING id, email",
-      [email, hashed]
+      `
+      INSERT INTO users
+      (email, password)
+      VALUES ($1, $2)
+      RETURNING id, email
+      `,
+      [email, hashedPassword]
+    );
+
+    /* CREATE JWT TOKEN */
+
+    const token = jwt.sign(
+      {
+        id: newUser.rows[0].id
+      },
+      process.env.JWT_SECRET,
+      {
+        expiresIn: "1d"
+      }
     );
 
     res.json({
+      success: true,
       message: "User registered successfully",
+      token,
       user: newUser.rows[0]
     });
 
   } catch (err) {
-    console.error(err.message);
-    res.status(500).json({ error: "Server error" });
+
+    console.error("REGISTER ERROR:");
+    console.error(err);
+
+    res.status(500).json({
+      success: false,
+      error: "Server error"
+    });
+
   }
+
 });
 
-
 /* ================= LOGIN ================= */
+
 router.post("/login", async (req, res) => {
+
   try {
+
     const { email, password } = req.body;
 
-    // validation
+    /* VALIDATION */
+
     if (!email || !password) {
-      return res.status(400).json({ error: "Email and password required" });
+
+      return res.status(400).json({
+        error: "Email and password required"
+      });
+
     }
 
-    // check user
-    const user = await pool.query(
-      "SELECT * FROM users WHERE email=$1",
+    /* FIND USER */
+
+    const userQuery = await pool.query(
+      `
+      SELECT *
+      FROM users
+      WHERE email = $1
+      `,
       [email]
     );
 
-    if (user.rows.length === 0) {
-      return res.status(400).json({ error: "User not found" });
+    if (userQuery.rows.length === 0) {
+
+      return res.status(400).json({
+        error: "User not found"
+      });
+
     }
 
-    // check password
-    const valid = await bcrypt.compare(
-      password,
-      user.rows[0].password
-    );
+    const user = userQuery.rows[0];
 
-    if (!valid) {
-      return res.status(400).json({ error: "Wrong password" });
+    /* CHECK PASSWORD */
+
+    const validPassword =
+      await bcrypt.compare(
+        password,
+        user.password
+      );
+
+    if (!validPassword) {
+
+      return res.status(400).json({
+        error: "Invalid password"
+      });
+
     }
 
-    // create token
+    /* CREATE JWT */
+
     const token = jwt.sign(
-      { id: user.rows[0].id },
-      "SECRET",
-      { expiresIn: "1d" }
+      {
+        id: user.id
+      },
+      process.env.JWT_SECRET,
+      {
+        expiresIn: "1d"
+      }
     );
 
     res.json({
+      success: true,
       message: "Login successful",
       token
     });
 
   } catch (err) {
-    console.error(err.message);
-    res.status(500).json({ error: "Server error" });
+
+    console.error("LOGIN ERROR:");
+    console.error(err);
+
+    res.status(500).json({
+      success: false,
+      error: "Server error"
+    });
+
   }
+
 });
 
 module.exports = router;
